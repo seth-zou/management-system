@@ -1,0 +1,73 @@
+# Git
+.git/
+.gitignore
+.gitattributes
+
+# CI / GitHub
+.github/
+.copier-answers.yml
+
+# Development tooling configs (not needed in the image)
+.pre-commit-config.yaml
+.editorconfig
+.eslint.config.cjs
+.prettierrc.yml
+prettier.config.cjs
+.ruff.toml
+.pylintrc
+.pylintrc-mandatory
+renovate.json
+checklog-odoo.cfg
+
+# Python caches & virtual environments
+__pycache__/
+*.py[cod]
+*.pyo
+.venv/
+.pytest_cache/
+.ruff_cache/
+*.egg-info/
+
+# IDE / Editor
+.idea/
+.vscode/
+.vs/
+.settings/
+.project
+.pydevproject
+.ropeproject
+.DS_Store
+
+# Build artifacts
+build/
+dist/
+*.egg
+*.so
+
+# Test / coverage
+htmlcov/
+.tox/
+.coverage
+.cache
+coverage.xml
+nosetests.xml
+
+# Documentation / README fragments (not needed at runtime)
+README.md
+LICENSE
+
+# Setup metapackage (only for pip packaging, not for container runtime)
+setup/
+
+# Translations compiled files
+*.mo
+
+# Backup files
+*~
+*.swp
+*.rej
+
+# Docker files themselves (not copied into the image)
+Dockerfile
+docker-compose.yml
+.dockerignore

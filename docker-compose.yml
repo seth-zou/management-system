@@ -1,0 +1,72 @@
+# =============================================================================
+# docker-compose.yml — OCA Management System (Odoo 19.0) deployment
+# =============================================================================
+# Quick start:
+#   docker compose up -d
+#
+# Then open:  http://localhost:8069
+#
+# First-time setup (after containers start):
+#   1. Navigate to http://localhost:8069
+#   2. Create a database using the master password (default: admin)
+#   3. Install desired modules, e.g.:
+#      Settings → Apps → search "Management System"
+#      Or via CLI:
+#        docker compose exec odoo odoo -d <dbname> \
+#          -i mgmtsystem,mgmtsystem_quality,mgmtsystem_audit,mgmtsystem_nonconformity \
+#          --stop-after-init
+#
+# Stop:
+#   docker compose down           # keep data
+#   docker compose down -v        # destroy data volumes
+# =============================================================================
+
+services:
+  db:
+    image: postgres:15
+    container_name: mgmtsystem-db
+    environment:
+      POSTGRES_DB: ${DB_NAME:-postgres}
+      POSTGRES_USER: ${DB_USER:-odoo}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-odoo}
+    volumes:
+      - odoo-db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "${DB_USER:-odoo}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+    networks:
+      - mgmtsystem-net
+
+  odoo:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: mgmtsystem-odoo:19.0
+    container_name: mgmtsystem-odoo
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      HOST: db
+      USER: ${DB_USER:-odoo}
+      PASSWORD: ${DB_PASSWORD:-odoo}
+      ADMIN_PASSWD: ${ADMIN_PASSWD:-admin}
+    ports:
+      - "${ODOO_PORT:-8069}:8069"
+      - "${ODOO_LONGPOLLING_PORT:-8072}:8072"
+    volumes:
+      - odoo-web-data:/var/lib/odoo
+    restart: unless-stopped
+    networks:
+      - mgmtsystem-net
+
+volumes:
+  odoo-db-data:
+  odoo-web-data:
+
+networks:
+  mgmtsystem-net:
+    driver: bridge
