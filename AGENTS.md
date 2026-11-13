@@ -17,10 +17,10 @@ Odoo addon module with its own `__manifest__.py`, `pyproject.toml`, `models/`,
 
 ### Prerequisites
 
-- **Python 3.10+** (pre-commit CI uses 3.12)
+- **Python 3.10+** (pre-commit CI uses 3.12; test CI uses 3.10)
 - **Odoo 19.0** runtime or the OCA CI container (`ghcr.io/oca/oca-ci/py3.10-odoo19.0:latest`)
 - **PostgreSQL 13+** (for running tests)
-- **Node.js 22+** (for pre-commit JS/ESLint/Prettier hooks)
+- **Node.js 22+** (for pre-commit JS/ESLint/Prettier hooks; pinned to 22.9.0 in pre-commit config)
 
 ### Install pre-commit hooks
 
@@ -80,7 +80,6 @@ pre-commit run --all-files
 To skip the auto-generated README check (useful when only editing README fragments):
 
 ```bash
-pre-commit run --all-files --hook-stage manual
 SKIP=oca-gen-addon-readme pre-commit run --all-files
 ```
 
@@ -90,10 +89,14 @@ CI is defined in `.github/workflows/`:
 
 - **pre-commit.yml** — runs all pre-commit hooks on all files (Python 3.12).
 - **test.yml** — runs the full test suite in two matrix variants:
-  - `test with Odoo` (official Odoo 19.0)
-  - `test with OCB` (OCA Community Backports 19.0)
+  - `test with Odoo` (official Odoo 19.0, container `ghcr.io/oca/oca-ci/py3.10-odoo19.0:latest`)
+  - `test with OCB` (OCA Community Backports 19.0, container `ghcr.io/oca/oca-ci/py3.10-ocb19.0:latest`)
   - Uses PostgreSQL 13 as a service container.
-  - Steps: `oca_install_addons` → `manifestoo check-licenses` → `manifestoo check-dev-status` → `oca_init_test_database` → `oca_run_tests` → codecov upload.
+  - Sets `OCA_ENABLE_CHECKLOG_ODOO=1` to enable Odoo log checking (configured via `checklog-odoo.cfg`).
+  - Steps: `oca_install_addons` → `manifestoo check-licenses` → `manifestoo check-dev-status --default-dev-status=Beta` → `oca_init_test_database` → `oca_run_tests` → codecov upload.
+  - The OCB matrix job also exports `.pot` translation files on push to the OCA repo (`oca_export_and_push_pot`).
+  - An `unreleased-deps` job rejects `requirements.txt` / `test-requirements.txt` entries that contain URLs or relative paths.
+- **stale.yml** — automatically closes stale issues and PRs.
 
 ### Test conventions
 
@@ -107,23 +110,28 @@ CI is defined in `.github/workflows/`:
 
 - **Formatter/Linter**: [Ruff](https://docs.astral.sh/ruff/) — config in `.ruff.toml`.
   - Target: Python 3.10
-  - Selected rules: `B` (flake8-bugbear), `C90` (mccabe, max complexity 16), `E501` (line length), `I` (isort), `UP` (pyupgrade)
+  - Selected rules: `B` (flake8-bugbear), `C90` (mccabe, max complexity 16), `E501` (line length, default 88), `I` (isort), `UP` (pyupgrade)
   - isort section order: `future → standard-library → third-party → odoo → odoo-addons → first-party → local-folder`
   - `setup/*` is excluded from ruff
   - `__init__.py`: F401 and I001 ignored (unused/unsorted imports OK)
   - `__manifest__.py`: B018 ignored
-- **Pylint (Odoo)**: [pylint-odoo](https://github.com/OCA/pylint-odoo) — configs in `.pylintrc` (full, non-blocking) and `.pylintrc-mandatory` (blocking).
+- **Pylint (Odoo)**: [pylint-odoo](https://github.com/OCA/pylint-odoo) — configs in `.pylintrc` (full, non-blocking, `--exit-zero`) and `.pylintrc-mandatory` (blocking).
   - Always run with `--rcfile=.pylintrc-mandatory` for blocking checks.
-  - Mandatory rules include: no SQL injection, no `print()`, manifest requirements, translation field checks, no write-in-compute, etc.
+  - Mandatory rules include: `sql-injection`, `eval-used`, `dangerous-default-value`, `print-used`, `no-write-in-compute`, `external-request-timeout`, `license-allowed`, `manifest-required-author`, `manifest-required-key`, `manifest-version-format`, `translation-field`, `translation-required`, `translation-not-lazy`, `translation-fstring-interpolation`, `translation-injection`, and more (see `.pylintrc-mandatory` for the full list).
+  - License-allowed values: `AGPL-3`, `GPL-2`, `GPL-2 or any later version`, `GPL-3`, `GPL-3 or any later version`, `LGPL-3`.
+  - Valid Odoo version: `19.0`.
+  - Manifest required author: `Odoo Community Association (OCA)`.
+  - Manifest required key: `license`.
+  - Manifest deprecated keys: `description`, `active`.
 
 ### JavaScript
 
 - **Linter**: ESLint 9 — config in `eslint.config.cjs`.
-  - Source type: `script` (not module)
-  - Globals: `odoo`, `openerp`, `owl`, `_`, `$`, `jQuery`, `moment`, `luxon`, `QUnit`
+  - `ecmaVersion: 2024`, `sourceType: "script"` (not module)
+  - Globals (readonly): `odoo`, `openerp`, `owl`, `_`, `$`, `jQuery`, `moment`, `luxon`, `fuzzy`, `QUnit`, plus all `globals.browser`
 - **Formatter**: Prettier — config in `prettier.config.cjs`.
   - Uses `@prettier/plugin-xml`
-  - `printWidth: 88`, `semi: true`, `trailingComma: "es5"`, `bracketSpacing: false`
+  - `printWidth: 88`, `semi: true`, `trailingComma: "es5"`, `bracketSpacing: false`, `proseWrap: "always"`, `xmlWhitespaceSensitivity: "preserve"`
 
 ### XML / HTML / CSS / YAML
 
@@ -135,7 +143,7 @@ CI is defined in `.github/workflows/`:
 - Every module has a `__manifest__.py` with required keys: `name`, `version` (format `19.0.x.y.z`), `license` (allowed: AGPL-3, GPL-2, GPL-3, LGPL-3), `author` (must include "Odoo Community Association (OCA)").
 - Models go in `<addon>/models/`, views in `<addon>/views/`, security in `<addon>/security/`.
 - Translations live in `<addon>/i18n/` — **never create `en.po` files** (pre-commit hook rejects them).
-- Module README is auto-generated from fragments in `<addon>/readme/` (DESCRIPTION.md, CONFIGURE.md, CONTRIBUTORS.md, CREDITS.md).
+- Module README is auto-generated from fragments in `<addon>/readme/` (DESCRIPTION.md, CONFIGURE.md, CONTRIBUTORS.md, CREDITS.md). The generated file is `<addon>/README.rst`.
 - Each addon has a `pyproject.toml` with `[build-system]` using the `whool` backend.
 
 ## Dev environment tips
@@ -146,7 +154,8 @@ CI is defined in `.github/workflows/`:
 - **Renovate**: Dependency updates are managed by Renovate bot (`renovate.json`), enabled for Copier manager only.
 - **`.pot` files**: Translation template files are auto-exported by CI in the OCB matrix job — do not manually edit unless fixing a translation source string.
 - **README.md**: The top-level `README.md` addon table is auto-generated. Edit individual addon README fragments in `<addon>/readme/` instead.
-- **Forbidden files**: `.rej` files (copier rejection junks), `en.po`, and obsolete dotfiles (`.travis.yml`, `CONTRIBUTING.md`, `.prettierrc.yml`, `.eslintrc.yml`) are rejected by pre-commit.
+- **`checklog-odoo.cfg`**: Configures `checklog-odoo` to suppress expected Odoo log warnings during CI tests.
+- **Forbidden files**: `.rej` files (copier rejection junks), `en.po`, and obsolete dotfiles (`.travis.yml`, `.t2d.yml`, `CONTRIBUTING.md`, `.prettierrc.yml`, `.eslintrc.yml`) are rejected by pre-commit.
 
 ## PR / Commit instructions
 
@@ -168,11 +177,14 @@ pre-commit run --all-files
 Key checks that must pass (non-exhaustive):
 - `ruff` (lint + format)
 - `pylint_odoo` with `.pylintrc-mandatory` (blocking)
-- `oca-checks-odoo-module` (Odoo module structure validation)
+- `oca-checks-odoo-module` (Odoo module structure validation, runs with `--fix`)
 - `oca-checks-po` (translation file validation)
-- `prettier` (formatting for JS/XML/HTML/CSS/YAML/MD)
-- `eslint` (JavaScript linting)
-- Standard pre-commit hooks (trailing whitespace, end-of-file, merge conflicts, etc.)
+- `prettier` (formatting for JS/XML/HTML/CSS/YAML/MD/TOML)
+- `eslint` (JavaScript linting, runs with `--fix`)
+- `whool-init` (addon packaging initialization)
+- `oca-gen-addon-readme` (auto-generate addon README from fragments)
+- `oca-gen-external-dependencies` (auto-generate external dependencies)
+- Standard pre-commit hooks (trailing whitespace, end-of-file, merge conflicts, debug statements, etc.)
 
 ### Commit guidelines
 
@@ -198,6 +210,7 @@ Key checks that must pass (non-exhaustive):
 - **No `eval()`**: The `eval-used` pylint rule is mandatory.
 - **Dangerous defaults**: `dangerous-default-value` is enforced (avoid mutable default arguments).
 - **License compliance**: All modules must declare an approved license in `__manifest__.py`. Check with `manifestoo check-licenses`.
-- **Translation injection**: Translation strings must not use f-strings or `.format()` with user input — use lazy translation (`_()`) properly.
+- **Translation injection**: Translation strings must not use f-strings or `.format()` with user input — use lazy translation (`_()`) properly. pylint-odoo enforces `translation-fstring-interpolation`, `translation-injection`, `translation-not-lazy`, and related rules.
 - **No sensitive data**: Never commit database credentials, API keys, or `.env` files. The `.gitignore` already excludes common patterns.
 - **External requests**: `external-request-timeout` is enforced — always set timeouts on external HTTP requests.
+- **No write in compute**: `no-write-in-compute` is enforced — do not call `write()` inside computed fields.
